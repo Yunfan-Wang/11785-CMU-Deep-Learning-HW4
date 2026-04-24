@@ -177,7 +177,7 @@ class ASRTrainer(BaseTrainer):
             # Clean up
             del feats, targets_shifted, targets_golden, feat_lengths, transcript_lengths
             del seq_out, curr_att, ctc_inputs, loss
-            torch.cuda.empty_cache()
+            # torch.cuda.empty_cache()
 
         # Handle remaining gradients
         if (len(dataloader) % self.config['training']['gradient_accumulation_steps']) != 0:
@@ -214,7 +214,19 @@ class ASRTrainer(BaseTrainer):
         """
         # TODO: In-fill the _validate_epoch method
         self.model.eval()
-        results = self.recognize(dataloader)
+        val_recognition_config = {
+            'num_batches': None,
+            'beam_width': 2,
+            'temperature': 1.0,
+            'repeat_penalty': 1.0,
+            'lm_weight': 0.0,
+            'lm_model': None
+        }
+        results = self.recognize(
+            dataloader,
+            recognition_config=val_recognition_config,
+            config_name='val_beam1'
+        )
 
         references = [r['target'] for r in results if 'target' in r]
         hypotheses = [r['generated'] for r in results]
@@ -246,7 +258,7 @@ class ASRTrainer(BaseTrainer):
         # Training loop
         best_val_loss = float('inf')
         best_val_wer  = float('inf')
-        best_val_cer  = float('inf')
+        best_word_dist  = float('inf')
         best_val_dist = float('inf')
 
         for epoch in range(self.current_epoch, self.current_epoch + epochs):
@@ -257,7 +269,7 @@ class ASRTrainer(BaseTrainer):
 
             # Step ReduceLROnPlateau scheduler with validation loss
             if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                self.scheduler.step(val_metrics['cer'])
+                self.scheduler.step(val_metrics['word_dist'])
             
             # Log metrics
             metrics = {
@@ -292,10 +304,10 @@ class ASRTrainer(BaseTrainer):
             self.save_checkpoint('checkpoint-last-epoch-model.pth')
             
             # Check if this is the best model
-            if val_metrics['cer'] < best_val_cer:
-                best_val_cer = val_metrics['cer']
-                self.best_metric = val_metrics['cer']
-                self.save_checkpoint('checkpoint-best-metric-model.pth') 
+            if val_metrics['word_dist'] < best_word_dist:
+                best_word_dist = val_metrics['word_dist']
+                self.best_metric = val_metrics['word_dist']
+                self.save_checkpoint('checkpoint-best-word_dist-model.pth') 
 
             self.current_epoch += 1
                 
